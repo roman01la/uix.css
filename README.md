@@ -1,5 +1,7 @@
 # uix.css
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.roman01la/uix.css.svg)](https://clojars.org/com.pitch/uix.core)
+
 CSS-in-CLJS library
 
 ```clojure
