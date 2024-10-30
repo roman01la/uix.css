@@ -67,7 +67,7 @@ While generated class names are quite descriptive (`auix-core-L18-C20` — ns + 
 
 ## Evaluators
 
-`uix.css` tries to inline constant values and pure expressions to reduce the number of dynamic styles, this is especially usedful when you have a set of shared design tokens in code, like colors, font sizes, spacing, etc.
+`uix.css` tries to inline constant values and pure expressions to reduce the number of dynamic styles, this is especially useful when you have a set of shared design tokens in code, like colors, font sizes, spacing, etc.
 
 In this example the value of `border-color` var will be inlined, as well as `(str "1px solid " border-color)` expression. `css` macro analyzes the code and evaluates well known functions given that their arguments are constant values.
 ```clojure
@@ -78,3 +78,8 @@ In this example the value of `border-color` var will be inlined, as well as `(st
 (css {:border (str "1px solid " border-color)
       :margin m-xl})
 ```
+
+## TODO
+- [ ] Styles composition
+- [ ] Global styles
+- [ ] CSS linting
