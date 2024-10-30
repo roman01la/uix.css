@@ -1,6 +1,6 @@
 # uix.css
 
-[![Clojars Project](https://img.shields.io/clojars/v/com.github.roman01la/uix.css.svg)](https://clojars.org/com.pitch/uix.core)
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.roman01la/uix.css.svg)](https://clojars.org/com.github.roman01la/uix.css)
 
 CSS-in-CLJS library
 
