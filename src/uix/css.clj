@@ -1,6 +1,8 @@
 (ns uix.css
-  (:require [cljs.analyzer.api :as ana-api]
+  (:require [cljs.analyzer :as ana]
+            [cljs.analyzer.api :as ana-api]
             [cljs.env :as env]
+            [cljs.source-map]
             [cljs.vendor.clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -12,7 +14,18 @@
   `(binding [*out* *err*]
      ~@body))
 
-(defn compile-rule [class-name selector k v]
+;; var name -> ast node
+(def defs (atom {}))
+
+(defonce parse-def (get-method ana/parse 'def))
+
+(defmethod ana/parse 'def [op env form name opts]
+  (let [ast (parse-def op env form name opts)]
+    (swap! defs assoc (:name ast) ast)
+    ast))
+
+(defn compile-rule [k v]
+  (assert (not (or (symbol? v) (list? v))) "Value can't be a symbol or expression here, this is a bug")
   (str (name k) ":"
        (cond
          (and (number? v) (not (css.lib/unitless-prop k)))
@@ -21,16 +34,13 @@
          (keyword? v)
          (name v)
 
-         (or (symbol? v) (list? v))
-         (str "var(--v" (hash (str class-name selector v)) ")")
-
          :else v)
        ";"))
 
 (defn compile-styles [class-name selector styles]
   (str (str/replace (name selector) "&" (str "." class-name))
        "{"
-       (str/join "" (map #(apply compile-rule class-name selector %) styles))
+       (str/join "" (map #(apply compile-rule %) styles))
        "}"))
 
 (def styles-reg (atom {}))
@@ -46,23 +56,20 @@
 
 (defn walk-styles-compile [class-name styles]
   (let [{:keys [self blocks media global]} (styles-by-type styles)]
-    (vec
+    (str/join ""
       (concat
+        ;; global styles
         (->> global
              (map second)
              (apply merge-with merge)
              (mapv (fn [[selector styles]]
                      (compile-styles class-name selector styles))))
+        ;; element styles
         (mapv #(apply compile-styles class-name %) (into [["&" self]] blocks))
+        ;; element media queries
         (mapv (fn [[media styles]]
-                (str media "{" (compile-styles class-name "&" styles) "}"))
+                (str media "{" (walk-styles-compile class-name styles) "}"))
               media)))))
-
-(defn walk-styles [class-name styles f]
-  (let [{:keys [self blocks media global]} (styles-by-type styles)]
-    (concat
-      (mapv #(apply f class-name %) (into [["&" self]] blocks))
-      (mapv #(f class-name "&" (last %)) media))))
 
 (def ^:dynamic *build-state*)
 
@@ -72,6 +79,7 @@
       (= :release)))
 
 (defn root-path []
+  ;; TODO: include build name dir
   (str ".styles/"
        (if (release?) "release" "dev")))
 
@@ -98,7 +106,8 @@
         sources (->> (vals styles)
                      (map (fn [{:keys [file]}]
                             [file (-> file io/resource slurp)]))
-                     (into #{}))
+                     (into #{})
+                     vec)
         sources-content (map second sources)
         source-files (map first sources)
         sm (into (cljs.source-map/encode* sm {:file file-name
@@ -123,7 +132,7 @@
                                  (assoc ret class (->> (walk-styles-compile class (:styles styles))
                                                        (assoc styles :css-str))))
                                {}))
-        styles-strs (mapcat :css-str (vals styles))
+        styles-strs (map :css-str (vals styles))
         file-name (peek (str/split output-to #"/"))
         sm-path (str file-name ".map")
         out (str (str/join "" styles-strs)
@@ -145,11 +154,7 @@
       (-> ast :init :val)
 
       (= :var (:op ast))
-      (let [ast (ana-api/no-warn
-                  (->> ast
-                       :root-source-info
-                       :source-form
-                       (ana-api/analyze env)))]
+      (let [ast (@defs (:name ast))]
         (when (-> ast :init :op (= :const))
           (-> ast :init :val)))
 
@@ -158,7 +163,13 @@
 (def evaluators
   {'cljs.core/inc inc
    'cljs.core/dec dec
+   'cljs.core/+ +
+   'cljs.core/- -
+   'cljs.core/* *
+   'cljs.core// (comp float /)
    'cljs.core/str str})
+
+;; TODO: add a walker for well known forms: when, if, etc
 
 (declare eval-css-value)
 
@@ -167,8 +178,9 @@
     (symbol? f)
     (if-let [eval-fn (->> f (ana-api/resolve env) :name evaluators)]
       (let [args (map #(eval-css-value env %) args)]
-        (when (every? (complement #{::nothing}) args)
-          (apply eval-fn args)))
+        (if (every? (complement #{::nothing}) args)
+          (apply eval-fn args)
+          ::nothing))
       ::nothing)
 
     :else ::nothing))
@@ -180,44 +192,63 @@
         (:val ast)
         ::nothing))))
 
+(defn dyn-var-name [v]
+  (let [{:keys [file line column]} (if (and (list? v)
+                                            (= 'clojure.core/deref (first v)))
+                                     (meta (second v))
+                                     (meta v))
+        ns (-> file
+               (str/replace #"\.clj(s|c)?$" "")
+               (str/replace #"(/|_)" "-"))]
+    (str "--" ns "-" line "-" column)))
+
 (defn eval-css-value [env v]
   (cond
     (symbol? v) (eval-symbol env v)
     (list? v) (eval-expr env v)
     :else (eval-value env v)))
 
-(defn find-dyn-styles [class-name styles env]
-  (let [evaled-styles (atom {})]
-    [(->> (walk-styles class-name styles
-            (fn [class-name selector styles]
-              (->> styles
-                   (keep (fn [[k v]]
-                           (when (or (symbol? v) (list? v))
-                             (let [ret (eval-css-value env v)]
-                               (if (= ::nothing ret)
-                                 [(str "--v" (hash (str class-name selector v))) `(uix.css.lib/interpret-value ~k ~v)]
-                                 (do (swap! evaled-styles assoc k ret)
-                                     nil)))))))))
-          (mapcat identity)
-          (into {}))
-     @evaled-styles]))
+(defn walk-map [f m]
+  (letfn [(walk [x]
+            (if (map? x)
+              (into {} (->> x (map (fn [[k v]] (f [k (walk v)])))))
+              x))]
+    (walk m)))
+
+(defn find-dyn-styles [styles env]
+  (let [dyn-input-styles (atom {})]
+    [(walk-map (fn [[k v]]
+                 (if-not (or (symbol? v) (list? v))
+                   [k v]
+                   (let [ret (eval-css-value env v)]
+                     (if (= ::nothing ret)
+                       (let [var-name (dyn-var-name v)]
+                         (swap! dyn-input-styles assoc var-name `(uix.css.lib/interpret-value ~k ~v))
+                         [k (str "var(" var-name ")")])
+                       [k ret]))))
+               styles)
+     @dyn-input-styles]))
 
 (def release-counter (atom 0))
 
+(defn make-styles [styles env]
+  (let [file (-> env :ns :meta :file)
+        {:keys [line column]} (meta styles)
+        class (if (release?)
+                (str "k" (swap! release-counter inc))
+                (str (-> env :ns :name (str/replace "." "-")) "-" line "-" column))
+        [evaled-styles dyn-input-styles] (find-dyn-styles styles env)]
+    ;; FIXME: support global styles
+    (swap! styles-reg assoc-in [file class] {:styles evaled-styles
+                                             :file file
+                                             :line line
+                                             :column column
+                                             :dyn-input-styles dyn-input-styles})
+    [class dyn-input-styles]))
+
 (defmacro css [styles]
   (binding [*build-state* (:shadow.build.cljs-bridge/state @env/*compiler*)]
-    (let [file (-> &env :ns :meta :file)
-          {:keys [line column]} (select-keys &env [:line :column])
-          class (if (release?)
-                  (str "k" (swap! release-counter inc))
-                  (str (-> &env :ns :name (str/replace "." "-"))
-                       "-L" line "-C" column))
-          [dyn-styles evaled-styles] (find-dyn-styles class styles &env)]
-      (swap! styles-reg assoc-in [file class] {:styles (into styles evaled-styles)
-                                               :file file
-                                               :line line
-                                               :column column})
-      [class dyn-styles])))
+    (make-styles styles &env)))
 
 (defn hook
   {:shadow.build/stage :compile-finish}

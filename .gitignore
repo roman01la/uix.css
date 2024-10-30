@@ -1,3 +1,7 @@
 *.iml
 .idea
 .cpcache
+.shadow-cljs
+.nrepl-port
+.styles
+public
