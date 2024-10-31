@@ -13,15 +13,31 @@
         "/*# sourceMappingURL=out.css.map */"]
        (str/join "")))
 
+(def css-out-release
+  (->> [".k1{margin:64px;padding:32px;border:1px solid #000;}"
+        ".k1:hover{color:blue;background:yellow;width:var(--v2);}"
+        ".k1:hover > div{border-radius:32px;}"
+        "@media (max-width: 800px){.k1{color:yellow;width:17px;}.k1:hover{color:yellow;width:var(--v3);}}"
+        "\n"
+        "/*# sourceMappingURL=out.css.map */"]
+       (str/join "")))
+
+(defn after []
+  (.delete (io/file "out.css"))
+  (.delete (io/file "out.css.map"))
+  (run! io/delete-file (reverse (file-seq (io/file ".styles"))))
+  (run! io/delete-file (reverse (file-seq (io/file ".shadow-cljs"))))
+  (run! io/delete-file (reverse (file-seq (io/file "public")))))
+
 (deftest test-css-compilation
-  (testing "generated CSS shoud match snapshot"
+  (testing "generated CSS should match snapshot"
     (shadow.cljs.devtools.cli/-main "compile" "test")
     (is (= css-out (slurp "out.css")))
-    (.delete (io/file "out.css"))
-    (.delete (io/file "out.css.map"))
-    (run! io/delete-file (reverse (file-seq (io/file ".styles"))))
-    (run! io/delete-file (reverse (file-seq (io/file ".shadow-cljs"))))
-    (run! io/delete-file (reverse (file-seq (io/file "public"))))))
+    (after))
+  (testing "generated minified CSS should match snapshot"
+    (shadow.cljs.devtools.cli/-main "release" "test")
+    (is (= css-out-release (slurp "out.css")))
+    (after)))
 
 (defn -main [& args]
   (run-tests 'core-test))

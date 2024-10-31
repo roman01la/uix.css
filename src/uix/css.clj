@@ -192,15 +192,19 @@
         (:val ast)
         ::nothing))))
 
+(def release-counter (atom 0))
+
 (defn dyn-var-name [v]
-  (let [{:keys [file line column]} (if (and (list? v)
-                                            (= 'clojure.core/deref (first v)))
-                                     (meta (second v))
-                                     (meta v))
-        ns (-> file
-               (str/replace #"\.clj(s|c)?$" "")
-               (str/replace #"(/|_)" "-"))]
-    (str "--" ns "-" line "-" column)))
+  (if (release?)
+    (str "--v" (swap! release-counter inc))
+    (let [{:keys [file line column]} (if (and (list? v)
+                                              (= 'clojure.core/deref (first v)))
+                                       (meta (second v))
+                                       (meta v))
+          ns (-> file
+                 (str/replace #"\.clj(s|c)?$" "")
+                 (str/replace #"(/|_)" "-"))]
+      (str "--" ns "-" line "-" column))))
 
 (defn eval-css-value [env v]
   (cond
@@ -208,12 +212,22 @@
     (list? v) (eval-expr env v)
     :else (eval-value env v)))
 
+(def ^:dynamic *global-context?* false)
+
 (defn walk-map [f m]
   (letfn [(walk [x]
             (if (map? x)
-              (into {} (->> x (map (fn [[k v]] (f [k (walk v)])))))
+              (into {} (->> x (map (fn [[k v]]
+                                     (if-not (and (= :global k) (map? v))
+                                       (f [k (walk v)])
+                                       (binding [*global-context?* true]
+                                         (f [k (walk v)])))))))
               x))]
     (walk m)))
+
+(defn- env-with-loc [env form]
+  (let [loc (select-keys (meta form) [:line :column])]
+    (cond-> env (seq loc) (into loc))))
 
 (defn find-dyn-styles [styles env]
   (let [dyn-input-styles (atom {})]
@@ -221,6 +235,8 @@
                  (if-not (or (symbol? v) (list? v))
                    [k v]
                    (let [ret (eval-css-value env v)]
+                     (when (and *global-context?* (= ::nothing ret))
+                       (ana/warning ::globa-styles-dynamic-vars (env-with-loc env v) {}))
                      (if (= ::nothing ret)
                        (let [var-name (dyn-var-name v)]
                          (swap! dyn-input-styles assoc var-name `(uix.css.lib/interpret-value ~k ~v))
@@ -229,8 +245,6 @@
                styles)
      @dyn-input-styles]))
 
-(def release-counter (atom 0))
-
 (defn make-styles [styles env]
   (let [file (-> env :ns :meta :file)
         {:keys [line column]} (meta styles)
@@ -238,20 +252,31 @@
                 (str "k" (swap! release-counter inc))
                 (str (-> env :ns :name (str/replace "." "-")) "-" line "-" column))
         [evaled-styles dyn-input-styles] (find-dyn-styles styles env)]
-    ;; FIXME: support global styles
     (swap! styles-reg assoc-in [file class] {:styles evaled-styles
                                              :file file
                                              :line line
                                              :column column
                                              :dyn-input-styles dyn-input-styles})
-    [class dyn-input-styles]))
+    {:uixCss {:class class
+              :vars dyn-input-styles}}))
 
-(defmacro css [styles]
+(defmacro css [& styles]
   (binding [*build-state* (:shadow.build.cljs-bridge/state @env/*compiler*)]
-    (make-styles styles &env)))
+    (let [styles (->> styles
+                      (mapv (fn [v]
+                              (if (map? v)
+                                `(cljs.core/array ~(make-styles v &env))
+                                `(let [v# ~v]
+                                   (if (map? v#)
+                                     (cljs.core/array v#)
+                                     v#))))))]
+      `(.concat ~@styles))))
 
 (defn hook
   {:shadow.build/stage :compile-finish}
   [build-state config]
   (write-styles! build-state config)
   build-state)
+
+(defmethod ana/error-message ::globa-styles-dynamic-vars [_ _]
+  "Global styles can't have dynamic values")

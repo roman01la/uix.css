@@ -1,4 +1,4 @@
-# uix.css
+<img src="logo.svg" width="128" />
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.github.roman01la/uix.css.svg)](https://clojars.org/com.pitch/uix.core)
 
@@ -11,8 +11,14 @@ CSS-in-CLJS library
             [uix.css.adapter.uix]))
 
 (defn button []
-  ($ :button {:css (css {:font-size "14px"
-                         :background "#151e2c"})}))
+  ($ :button {:style (css {:font-size "14px"
+                           :background "#151e2c"})}))
+```
+
+## Installation
+
+```clojure
+{:deps {com.github.roman01la/uix.css {:mvn/version "0.2.0"}}}
 ```
 
 ## Motivation
@@ -36,13 +42,13 @@ In the example below I'm using [UIx](https://github.com/pitch-io/uix). The libra
 (def border-color "blue")
 
 (defn button []
-  ($ :button {:css (css {:font-size "14px"
-                         :background "#151e2c"
-                         :padding "8px 32px"
-                         :border (str "1px solid " border-color)
-                         :&:hover {:background "green"}
-                         "@media (max-width: 800px)" {:padding "4px 12px"}
-                         "& > strong" {:font-weight 600}})}))
+  ($ :button {:style (css {:font-size "14px"
+                          :background "#151e2c"
+                          :padding "8px 32px"
+                          :border (str "1px solid " border-color)
+                          :&:hover {:background "green"}
+                          "@media (max-width: 800px)" {:padding "4px 12px"}
+                          "& > strong" {:font-weight 600}})}))
 ```
 
 `uix.css/hook` build hook takes care of generating CSS and creating a bundle. 
@@ -58,6 +64,59 @@ In the example below I'm using [UIx](https://github.com/pitch-io/uix). The libra
 ```
 
 When compiled, static part of the styles map is dumped into CSS bundle, but dynamic part of it (see `border-color` example above) is deferred to runtime, where values are assigned via CSS Variables API.
+
+### Styles composition
+
+`css` macro takes arbitrary number of styles
+
+```clojure
+(defui button [{:keys [style children]}]
+  ($ :button
+    {:style (css {:color :red
+                  :padding "8px 16px"}
+                 style)}
+    children))
+
+($ button {:style (css {:background :yellow})}
+   "press me")
+```
+
+When a map of styles is passed at runtime, it will be applied as normal inline styles. This behaviour exists specifically for a case when you have UI styled with inline CSS and want to migrate to `uix.css` gradually.
+
+In this example existing `button` component was updated with `css` macro, but all usage places are still passing inline styles, meaning that updating internals of the component won't break its users. 
+
+```clojure
+(defui button [{:keys [style children]}]
+  ($ :button
+    {:style (css {:color :red
+                  :padding "8px 16px"}
+                 style)}
+    children))
+
+;; these styles will be applied as inline styles
+($ button {:style {:background :yellow}}
+   "press me")
+```
+
+### Global styles
+
+Styles passed under `:global` keyword are not scoped to current element, also global styles do not support dynamic values. This exists as a convenience, to avoid creating CSS file just for global styles.
+
+```clojure
+(defui app []
+  ($ :div {:style (css {:width "100vw"
+                        :min-height "100vh"
+                        :background "#10121e"
+                        :color "#d7dbf1"
+                        :global {:html {:box-sizing :border-box}
+                                 "html *" {:box-sizing :inherit}
+                                 :body {:-webkit-font-smoothing :antialiased
+                                        :-moz-osx-font-smoothing :grayscale
+                                        :-moz-font-feature-settings "\"liga\" on"
+                                        :text-rendering :optimizelegibility
+                                        :margin 0
+                                        :font "400 16px / 1.4 Inter, sans-serif"}}})}))
+```
 
 ## Source maps
 
@@ -80,6 +139,4 @@ In this example the value of `border-color` var will be inlined, as well as `(st
 ```
 
 ## TODO
-- [ ] Styles composition
-- [ ] Global styles
-- [ ] CSS linting
+- [ ] Pluggable CSS linting
