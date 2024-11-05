@@ -71,7 +71,7 @@
         ;; element media queries
         ;; FIXME: media styles should be in the end of file
         (mapv (fn [[media styles]]
-                (str media "{" (walk-styles-compile class-name styles) "}"))
+                (str media "{" (walk-styles-compile class-name styles :global? global?) "}"))
               media)))))
 
 (def ^:dynamic *build-state*)
