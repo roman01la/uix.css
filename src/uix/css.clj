@@ -37,8 +37,10 @@
          :else v)
        ";"))
 
-(defn compile-styles [class-name selector styles]
-  (str (str/replace (name selector) "&" (str "." class-name))
+(defn compile-styles [class-name selector styles & {:keys [global?]}]
+  (str (if global?
+         (str/replace (name selector) "&" class-name)
+         (str/replace (name selector) "&" (str "." class-name)))
        "{"
        (str/join "" (map #(apply compile-rule %) styles))
        "}"))
@@ -54,7 +56,7 @@
                  :else :self))
             styles))
 
-(defn walk-styles-compile [class-name styles]
+(defn walk-styles-compile [class-name styles & {:keys [global?]}]
   (let [{:keys [self blocks media global]} (styles-by-type styles)]
     (str/join ""
       (concat
@@ -63,10 +65,11 @@
              (map second)
              (apply merge-with merge)
              (mapv (fn [[selector styles]]
-                     (compile-styles class-name selector styles))))
+                     (walk-styles-compile (name selector) styles :global? true))))
         ;; element styles
-        (mapv #(apply compile-styles class-name %) (into [["&" self]] blocks))
+        (mapv #(apply compile-styles class-name (concat % [:global? global?])) (into [["&" self]] blocks))
         ;; element media queries
+        ;; FIXME: media styles should be in the end of file
         (mapv (fn [[media styles]]
                 (str media "{" (walk-styles-compile class-name styles) "}"))
               media)))))
@@ -236,7 +239,7 @@
                    [k v]
                    (let [ret (eval-css-value env v)]
                      (when (and *global-context?* (= ::nothing ret))
-                       (ana/warning ::globa-styles-dynamic-vars (env-with-loc env v) {}))
+                       (ana/warning ::global-styles-dynamic-vars (env-with-loc env v) {}))
                      (if (= ::nothing ret)
                        (let [var-name (dyn-var-name v)]
                          (swap! dyn-input-styles assoc var-name `(uix.css.lib/interpret-value ~k ~v))
@@ -278,5 +281,5 @@
   (write-styles! build-state config)
   build-state)
 
-(defmethod ana/error-message ::globa-styles-dynamic-vars [_ _]
+(defmethod ana/error-message ::global-styles-dynamic-vars [_ _]
   "Global styles can't have dynamic values")
