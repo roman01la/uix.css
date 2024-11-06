@@ -70,6 +70,7 @@
         (mapv #(apply compile-styles class-name (concat % [:global? global?])) (into [["&" self]] blocks))
         ;; element media queries
         ;; FIXME: media styles should be in the end of file
+        ;; FIXME: keyframes
         (mapv (fn [[media styles]]
                 (str media "{" (walk-styles-compile class-name styles :global? global?) "}"))
               media)))))
