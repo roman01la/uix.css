@@ -15,6 +15,8 @@ CSS-in-CLJS library
                            :background "#151e2c"})}))
 ```
 
+- Discuss at #uix on Clojurians Slack
+
 ## Installation
 
 ```clojure
