@@ -45,8 +45,6 @@
        (str/join "" (map #(apply compile-rule %) styles))
        "}"))
 
-(def styles-reg (atom {}))
-
 (defn styles-by-type [styles]
   (group-by #(let [k (-> % key name)]
                (cond
@@ -144,11 +142,16 @@
     (write-source-map! styles out output-to)
     (spit output-to out)))
 
+(defn- build-state->styles-reg [{:keys [compiler-env]}]
+  (->> (::ana/namespaces compiler-env)
+       vals
+       (map :uix/css)
+       (apply merge)))
+
 (defn write-styles! [state config]
   (binding [*build-state* state]
-    (write-modules! @styles-reg)
-    (write-bundle! state config)
-    (reset! styles-reg {})))
+    (write-modules! (build-state->styles-reg state))
+    (write-bundle! state config)))
 
 (defn eval-symbol [env v]
   (let [ast (ana-api/resolve env v)]
@@ -250,17 +253,19 @@
      @dyn-input-styles]))
 
 (defn make-styles [styles env]
-  (let [file (-> env :ns :meta :file)
+  (let [ns (-> env :ns :name)
+        file (-> env :ns :meta :file)
         {:keys [line column]} (meta styles)
         class (if (release?)
                 (str "k" (swap! release-counter inc))
                 (str (-> env :ns :name (str/replace "." "-")) "-" line "-" column))
         [evaled-styles dyn-input-styles] (find-dyn-styles styles env)]
-    (swap! styles-reg assoc-in [file class] {:styles evaled-styles
-                                             :file file
-                                             :line line
-                                             :column column
-                                             :dyn-input-styles dyn-input-styles})
+    (swap! env/*compiler* assoc-in [::ana/namespaces ns :uix/css file class]
+           {:styles evaled-styles
+            :file file
+            :line line
+            :column column
+            :dyn-input-styles dyn-input-styles})
     {:uixCss {:class class
               :vars dyn-input-styles}}))
 
