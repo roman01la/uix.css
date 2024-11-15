@@ -20,7 +20,7 @@ CSS-in-CLJS library
 ## Installation
 
 ```clojure
-{:deps {com.github.roman01la/uix.css {:mvn/version "0.2.0"}}}
+{:deps {com.github.roman01la/uix.css {:mvn/version "0.2.1"}}}
 ```
 
 ## Motivation
