@@ -134,7 +134,10 @@
                                  (assoc ret class (->> (walk-styles-compile class (:styles styles))
                                                        (assoc styles :css-str))))
                                {}))
-        styles-strs (map :css-str (vals styles))
+        styles-strs (->> styles
+                         (sort-by (comp #(->> (str/split % #"-") (take-last 2) (str/join "."))
+                                        key))
+                         (map (comp :css-str val)))
         file-name (peek (str/split output-to #"/"))
         sm-path (str file-name ".map")
         out (str (str/join "" styles-strs)
