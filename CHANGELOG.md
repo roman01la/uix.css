@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- Support code splitting (shadow's modules)
+
 ## 0.2.1
 
 - Static styles are sorted by location in code

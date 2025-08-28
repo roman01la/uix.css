@@ -4,9 +4,13 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.github.roman01la</groupId>
   <artifactId>uix.css</artifactId>
-  <version>0.2.1</version>
+  <version>0.3.0</version>
   <name>uix.css</name>
   <licenses>
+    <license>
+      <name>Eclipse Public License - Version 2.0</name>
+      <url>https://www.eclipse.org/legal/epl-2.0/</url>
+    </license>
     <license>
       <name>Eclipse Public License - Version 2.0</name>
       <url>https://www.eclipse.org/legal/epl-2.0/</url>
@@ -15,7 +19,7 @@
   <scm>
     <connection>scm:git:git@github.com:roman01la/uix.css.git</connection>
     <developerConnection>scm:git:git@github.com:roman01la/uix.css.git</developerConnection>
-    <tag>3c207e12b49d240a9f3e6131e326450d65dc6b82</tag>
+    <tag>46c32d331b5c40b5b66b7e5afb0db2b20b00a12d</tag>
     <url>https://github.com/roman01la/uix.css</url>
   </scm>
   <build>

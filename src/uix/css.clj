@@ -8,7 +8,7 @@
             [clojure.string :as str]
             [clojure.tools.reader.edn :as edn]
             [uix.css.lib :as css.lib])
-  (:import (java.io File)))
+  (:import (java.io File FileNotFoundException)))
 
 (defmacro debug [& body]
   `(binding [*out* *err*]
@@ -117,11 +117,36 @@
                  {"sources" source-files})]
     (spit (str output-to ".map") (json/write-str sm :escape-slash false))))
 
-(defn write-bundle! [state {:keys [output-to]}]
-  (let [build-sources (->> (:build-sources state)
+(defn write-bundle! [[output-name styles] output-dir]
+  (let [styles (into {} styles)
+        styles-strs (->> styles
+                         (sort-by (comp #(->> (str/split % #"-") (take-last 2) (str/join "."))
+                                        key))
+                         (map (comp :css-str val)))
+        sm-path (str output-name ".map")
+        output-to (str output-dir "/" output-name)
+        out (str (str/join "" styles-strs)
+                 "\n/*# sourceMappingURL=" sm-path " */")]
+    (write-source-map! styles out output-to)
+    (try
+      (when (not= (slurp output-to) out)
+        (spit output-to out))
+      (catch FileNotFoundException e
+        (spit output-to out)))))
+
+(defn write-bundles! [state]
+  (let [output-dir (->> state :shadow.build/config :output-dir)
+        build-sources (->> (:build-sources state)
                            (map second)
                            (filter string?)
                            (into #{}))
+        modules (->> (vals (:shadow.build.modules/modules state))
+                     (map (fn [{:keys [module-name sources]}]
+                            {:output-name (str/replace module-name #"\.js$" ".css")
+                             :sources (->> sources
+                                           (filter (comp #{:shadow.build.classpath/resource} first))
+                                           (keep (comp :ns (:sources state)))
+                                           (into #{}))})))
         used (->> (styles-modules)
                   (filter #(-> (.getPath ^File %)
                                (str/replace #"^\.styles\/(dev|release)/" "")
@@ -134,16 +159,14 @@
                                  (assoc ret class (->> (walk-styles-compile class (:styles styles))
                                                        (assoc styles :css-str))))
                                {}))
-        styles-strs (->> styles
-                         (sort-by (comp #(->> (str/split % #"-") (take-last 2) (str/join "."))
-                                        key))
-                         (map (comp :css-str val)))
-        file-name (peek (str/split output-to #"/"))
-        sm-path (str file-name ".map")
-        out (str (str/join "" styles-strs)
-                 "\n/*# sourceMappingURL=" sm-path " */")]
-    (write-source-map! styles out output-to)
-    (spit output-to out)))
+        style-modules (->> styles
+                           (group-by (fn [[_ {:keys [ns]}]]
+                                       (->> modules
+                                            (reduce #(when (contains? (:sources %2) ns)
+                                                       (reduced (:output-name %2)))
+                                                    nil)))))]
+    (.mkdirs (io/file output-dir))
+    (run! #(write-bundle! % output-dir) style-modules)))
 
 (defn- build-state->styles-reg [{:keys [compiler-env]}]
   (->> (::ana/namespaces compiler-env)
@@ -151,10 +174,10 @@
        (map :uix/css)
        (apply merge)))
 
-(defn write-styles! [state config]
+(defn write-styles! [state]
   (binding [*build-state* state]
     (write-modules! (build-state->styles-reg state))
-    (write-bundle! state config)))
+    (write-bundles! state)))
 
 (defn eval-symbol [env v]
   (let [ast (ana-api/resolve env v)]
@@ -266,6 +289,7 @@
     (swap! env/*compiler* assoc-in [::ana/namespaces ns :uix/css file class]
            {:styles evaled-styles
             :file file
+            :ns ns
             :line line
             :column column
             :dyn-input-styles dyn-input-styles})
@@ -286,9 +310,21 @@
 
 (defn hook
   {:shadow.build/stage :compile-finish}
-  [build-state config]
-  (write-styles! build-state config)
+  [build-state]
+  (write-styles! build-state)
   build-state)
 
 (defmethod ana/error-message ::global-styles-dynamic-vars [_ _]
   "Global styles can't have dynamic values")
+
+(defmacro load-before [ns promise]
+  (let [asset-path (->> (:shadow.build.cljs-bridge/state @env/*compiler*)
+                        :shadow.build/config
+                        :asset-path)
+        path (->> (:shadow.build.cljs-bridge/state @env/*compiler*)
+                  :shadow.build.modules/modules
+                  vals
+                  (some #(when (contains? (set (:entries %)) ns)
+                           (str asset-path "/" (str/replace (:module-name %) #"\.js$" ".css")))))]
+    `(-> (load-stylesheet ~path)
+         (.then (fn [] ~promise)))))

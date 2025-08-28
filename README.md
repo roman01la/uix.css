@@ -20,7 +20,7 @@ CSS-in-CLJS library
 ## Installation
 
 ```clojure
-{:deps {com.github.roman01la/uix.css {:mvn/version "0.2.1"}}}
+{:deps {com.github.roman01la/uix.css {:mvn/version "0.3.0"}}}
 ```
 
 ## Motivation
@@ -61,7 +61,7 @@ In the example below I'm using [UIx](https://github.com/pitch-io/uix). The libra
  :dev-http {8080 "public"}
  :builds {:website
           {:target :browser
-           :build-hooks [(uix.css/hook {:output-to "public/website.css"})]
+           :build-hooks [(uix.css/hook)]
            :modules {:website {:entries [my.app]}}}}}
 ```
 
@@ -139,6 +139,64 @@ In this example the value of `border-color` var will be inlined, as well as `(st
 (css {:border (str "1px solid " border-color)
       :margin m-xl})
 ```
+
+## Code-splitting
+
+Starting from v0.3.0 uix.css follows shadow's code splitting via modules. Here's UIx example:
+
+```clojure
+;; main module
+(ns app.core
+  (:require [uix.core :as uix :refer [$ defui]]
+            [uix.css :refer [css]]
+            [uix.css.adapter.uix]
+            [shadow.lazy]))
+
+;; create loadable var
+(def loadable-settings
+  (shadow.lazy/loadable app.settings/view))
+
+(def settings
+  ;; creates lazy React component
+  (uix.core/lazy
+    ;; loads CSS bundle of the settings module
+    #(uix.css/load-before app.settings
+       ;; loads settings module
+       (shadow.lazy/load loadable-settings))))
+
+(defui root-layout [] 
+  ($ :div {:style (css {:padding 24})}
+    ;; Suspense component displays the fallback UI while
+    ;; lazy component is being loaded
+    ($ uix.core/suspense {:fallback "loading settings..."}
+      ($ settings))))
+
+(defn init []
+  ;; render
+  )
+
+;; settings module
+(ns app.settings
+  (:require [uix.core :as uix :refer [$ defui]]
+            [uix.css :refer [css]]
+            [uix.css.adapter.uix]))
+
+(defui view []
+  ($ :div {:style (css {:padding 16})}))
+
+;; shadow-cljs.edn build config
+{:app {:target :browser
+       :module-loader true
+       :modules {:main {:entries [app.core]
+                        :init-fn app.core/init}
+                 :settings {:entries [app.settings]
+                            :depends-on #{:main}}}
+       :build-hooks [(uix.css/hook)]}}
+```
+
+Building this example will output two CSS bundles next to JavaScript bundles: `main.css` and `settings.css`.
+
+Same as for splitted JavaScript, you have to load initial CSS bundle explicitly, by declaring it via `<link>` element in HTML. But for dynamically loaded modules you need to use `uix.css/load-before` function to load CSS bundle of the specified module before the module itself.
 
 ## TODO
 - [ ] Pluggable CSS linting
