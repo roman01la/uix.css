@@ -26,5 +26,5 @@
               (set! (.-className props)
                     (uix.attrs/class-names (.-className props) class-names))
               (set! (.-style props)
-                    (js/Object.assign #js {} (uix.compiler.attributes/convert-prop-value-shallow @inline-styles))))))
+                    (uix.compiler.attributes/convert-prop-value-shallow @inline-styles)))))
         (create-element args children)))

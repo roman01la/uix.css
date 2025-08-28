@@ -1,5 +1,5 @@
 {:deps true
  :builds {:test
           {:target :browser
-           :build-hooks [(uix.css/hook {:output-to "out.css"})]
+           :build-hooks [(uix.css/hook)]
            :modules {:test {:entries [core-test]}}}}}
